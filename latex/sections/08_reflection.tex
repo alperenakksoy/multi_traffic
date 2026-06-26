@@ -1,0 +1,22 @@
+\section{Reflection on Protocol Behavior Under Different Traffic Patterns}
+
+This section should pull together what Sections V through VII actually showed,
+not repeat them. Questions worth answering once the data is there:
+
+\begin{itemize}
+\item Which protocol was easiest to fingerprint in normal, non-stealth
+conditions, and why?
+\item Did the random pattern change the I/O graph shape equally for every
+protocol, or did some (HTTP/2 firing several streams per cycle, for instance)
+keep some residual periodicity?
+\item Did the measured packet-to-message ratio for MQTT match the expected 1x
+for QoS 0 and 4x for QoS 2?
+\item How did Adaptive Control's reaction time compare to the raw,
+protocol-level failure detection time (TCP RST in under a second vs.\ the
+configured check interval)?
+\item What would change about distinguishability if TLS were used everywhere,
+including MQTT and raw TCP?
+\end{itemize}
+
+\todoblock{INSERT}{Two to four paragraphs answering the points above with
+concrete numbers from your own captures.}

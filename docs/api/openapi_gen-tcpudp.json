@@ -1,0 +1,493 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MIC TCP/UDP Generator",
+    "description": "Sends raw TCP/UDP traffic with configurable rate, packet size, protocol mix and Normal vs. Stealth timing/size patterns (used for the Behavioral Fingerprinting analysis).",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/start": {
+      "post": {
+        "summary": "Start generating traffic",
+        "description": "Starts the generator and optionally applies an initial configuration (same fields as PATCH /config).",
+        "operationId": "start_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorConfig",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stop": {
+      "post": {
+        "summary": "Stop generating traffic",
+        "operationId": "stop_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "patch": {
+        "summary": "Update configuration at runtime",
+        "description": "Updates any subset of: mode ('normal'|'stealth'), pattern ('constant'|'periodic_burst'|'random'), tcp_rate, udp_rate, packet_size, mean_interval, min_size, max_size, tcp_ratio, burst_size, burst_interval, fault_rate, extra_latency_ms.",
+        "operationId": "config_config_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Get live status and statistics",
+        "operationId": "status_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GeneratorConfig": {
+        "properties": {
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode",
+            "description": "Packet-size/timing-base mode: 'normal' (fixed size) or 'stealth' (random size)."
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern",
+            "description": "Overall sending cadence: 'constant' (one packet per interval derived from tcp_rate/udp_rate), 'periodic_burst' (burst_size packets back-to-back, then idle for burst_interval seconds), or 'random' (Poisson/exponentially-distributed gaps between sends)."
+          },
+          "tcp_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcp Rate",
+            "description": "TCP packets/sec target (used by 'constant'/'random' patterns)."
+          },
+          "udp_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Udp Rate",
+            "description": "UDP packets/sec target (used by 'constant'/'random' patterns)."
+          },
+          "packet_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packet Size",
+            "description": "Fixed packet size (bytes) in 'normal' mode."
+          },
+          "mean_interval": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Interval"
+          },
+          "min_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Size",
+            "description": "Minimum packet size (bytes) in 'stealth' mode."
+          },
+          "max_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Size",
+            "description": "Maximum packet size (bytes) in 'stealth' mode."
+          },
+          "tcp_ratio": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcp Ratio",
+            "description": "Percentage of packets sent as TCP (rest UDP)."
+          },
+          "burst_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 200.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Burst Size",
+            "description": "Number of packets sent back-to-back per burst, when pattern='periodic_burst'."
+          },
+          "burst_interval": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Burst Interval",
+            "description": "Seconds to idle between bursts, when pattern='periodic_burst'."
+          },
+          "fault_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fault Rate",
+            "description": "Fraction of sends (0-1) deliberately treated as failures, without sending, for resilience and failure-injection demos."
+          },
+          "extra_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Latency Ms",
+            "description": "Artificial extra delay (ms) injected before every send, simulating network congestion or an overloaded target."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "GeneratorConfig",
+        "description": "Configurable parameters. All fields optional; only provided keys are updated.",
+        "example": {
+          "burst_interval": 1.0,
+          "burst_size": 10,
+          "extra_latency_ms": 0,
+          "fault_rate": 0.0,
+          "mode": "stealth",
+          "pattern": "periodic_burst",
+          "tcp_rate": 20,
+          "tcp_ratio": 60,
+          "udp_rate": 10
+        }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OkResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          }
+        },
+        "type": "object",
+        "title": "OkResponse"
+      },
+      "StatusResponse": {
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "pattern": {
+            "type": "string",
+            "title": "Pattern"
+          },
+          "tcp_rate": {
+            "type": "number",
+            "title": "Tcp Rate"
+          },
+          "udp_rate": {
+            "type": "number",
+            "title": "Udp Rate"
+          },
+          "packet_size": {
+            "type": "integer",
+            "title": "Packet Size"
+          },
+          "mean_interval": {
+            "type": "number",
+            "title": "Mean Interval"
+          },
+          "min_size": {
+            "type": "integer",
+            "title": "Min Size"
+          },
+          "max_size": {
+            "type": "integer",
+            "title": "Max Size"
+          },
+          "tcp_ratio": {
+            "type": "integer",
+            "title": "Tcp Ratio"
+          },
+          "burst_size": {
+            "type": "integer",
+            "title": "Burst Size"
+          },
+          "burst_interval": {
+            "type": "number",
+            "title": "Burst Interval"
+          },
+          "packets_sent": {
+            "type": "integer",
+            "title": "Packets Sent"
+          },
+          "bytes_sent": {
+            "type": "integer",
+            "title": "Bytes Sent"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          },
+          "rate_bps": {
+            "type": "integer",
+            "title": "Rate Bps"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms"
+          },
+          "fault_rate": {
+            "type": "number",
+            "title": "Fault Rate"
+          },
+          "extra_latency_ms": {
+            "type": "number",
+            "title": "Extra Latency Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "running",
+          "mode",
+          "pattern",
+          "tcp_rate",
+          "udp_rate",
+          "packet_size",
+          "mean_interval",
+          "min_size",
+          "max_size",
+          "tcp_ratio",
+          "burst_size",
+          "burst_interval",
+          "packets_sent",
+          "bytes_sent",
+          "errors",
+          "rate_bps",
+          "latency_ms",
+          "fault_rate",
+          "extra_latency_ms"
+        ],
+        "title": "StatusResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

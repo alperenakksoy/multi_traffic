@@ -1,0 +1,424 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MIC MQTT Generator",
+    "description": "Publishes configurable MQTT traffic (rate, payload size, QoS, topics) to the Mosquitto broker.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/start": {
+      "post": {
+        "summary": "Start generating traffic",
+        "description": "Starts the generator and optionally applies an initial configuration (same fields as PATCH /config).",
+        "operationId": "start_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorConfig",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stop": {
+      "post": {
+        "summary": "Stop generating traffic",
+        "operationId": "stop_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "patch": {
+        "summary": "Update configuration at runtime",
+        "description": "Updates any subset of: rate, payload_size, qos (0/1/2), topic_count, qos_distribution, pattern ('constant'|'random'), fault_rate, extra_latency_ms. Changing topic_count re-subscribes this generator to the new set of topics.",
+        "operationId": "config_config_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Get live status and statistics",
+        "operationId": "status_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GeneratorConfig": {
+        "properties": {
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate",
+            "description": "Publish rate in messages per second."
+          },
+          "payload_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Size",
+            "description": "Size (bytes) of each published message payload."
+          },
+          "qos": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qos",
+            "description": "Fixed QoS level (0/1/2) used for every publish, unless qos_distribution is set."
+          },
+          "topic_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic Count",
+            "description": "Number of topics rotated through for publishing and subscribing (1-20). The first 5 are the descriptive base topics (sensors/..., actuators/..., status/...); additional topics are named load/topic-N. Changing this re-subscribes to the new topic set."
+          },
+          "qos_distribution": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qos Distribution",
+            "description": "Optional probability weights for QoS levels 0/1/2, either as a list [w0, w1, w2] or as a mapping {\"0\": w0, \"1\": w1, \"2\": w2} (as used by the YAML profiles). If set (3 non-negative numbers, not all zero), each publish draws its QoS from this distribution instead of using the fixed `qos` value. Pass null/empty to fall back to the fixed `qos`."
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern",
+            "description": "Overall sending cadence: 'constant' (fixed 1/rate interval between publishes) or 'random' (exponentially-distributed/Poisson gaps between publishes, same mean rate as 'constant')."
+          },
+          "fault_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fault Rate",
+            "description": "Fraction of publishes (0-1) deliberately treated as failures, without sending, for resilience and failure-injection demos."
+          },
+          "extra_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Latency Ms",
+            "description": "Artificial extra delay (ms) injected before every publish, simulating network congestion or an overloaded broker."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "GeneratorConfig",
+        "description": "Configurable parameters. All fields optional; only provided keys are updated.",
+        "example": {
+          "extra_latency_ms": 0,
+          "fault_rate": 0.0,
+          "payload_size": 256,
+          "qos": 1,
+          "qos_distribution": [
+            0.5,
+            0.3,
+            0.2
+          ],
+          "rate": 30,
+          "topic_count": 5
+        }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OkResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "OkResponse"
+      },
+      "StatusResponse": {
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "rate": {
+            "type": "number",
+            "title": "Rate"
+          },
+          "payload_size": {
+            "type": "integer",
+            "title": "Payload Size"
+          },
+          "qos": {
+            "type": "integer",
+            "title": "Qos"
+          },
+          "topic_count": {
+            "type": "integer",
+            "title": "Topic Count"
+          },
+          "qos_distribution": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qos Distribution"
+          },
+          "pattern": {
+            "type": "string",
+            "title": "Pattern"
+          },
+          "packets_sent": {
+            "type": "integer",
+            "title": "Packets Sent"
+          },
+          "bytes_sent": {
+            "type": "integer",
+            "title": "Bytes Sent"
+          },
+          "messages_received": {
+            "type": "integer",
+            "title": "Messages Received"
+          },
+          "bytes_received": {
+            "type": "integer",
+            "title": "Bytes Received"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          },
+          "rate_bps": {
+            "type": "integer",
+            "title": "Rate Bps"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms"
+          },
+          "fault_rate": {
+            "type": "number",
+            "title": "Fault Rate"
+          },
+          "extra_latency_ms": {
+            "type": "number",
+            "title": "Extra Latency Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "running",
+          "rate",
+          "payload_size",
+          "qos",
+          "topic_count",
+          "pattern",
+          "packets_sent",
+          "bytes_sent",
+          "messages_received",
+          "bytes_received",
+          "errors",
+          "rate_bps",
+          "latency_ms",
+          "fault_rate",
+          "extra_latency_ms"
+        ],
+        "title": "StatusResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

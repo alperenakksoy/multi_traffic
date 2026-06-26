@@ -1,0 +1,89 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-Machine Deployment — MACHINE B (Targets + Metrics + Broker)
+# ─────────────────────────────────────────────────────────────────────────────
+# Run this on the SECOND lab machine. It starts the three target services,
+# the MQTT broker, and the metrics collector — everything the generators on
+# Machine A need to reach over the real network link.
+#
+# Usage (on Machine B):
+#   docker-compose -f docker-compose.targets.yml up --build
+#
+# Then find this machine's IP (needed on Machine A):
+#   ip addr show eth0      # Linux
+#   ipconfig getifaddr en0 # macOS
+#
+# Make sure the firewall on this machine allows inbound connections on:
+#   8080/tcp  (HTTP/2 target)
+#   4433/udp  (QUIC target)
+#   9999/tcp, 9999/udp (TCP/UDP sink)
+#   1883/tcp  (MQTT broker)
+#   9090/tcp  (Metrics collector)
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  mic-net-b:
+    driver: bridge
+
+services:
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    networks: [mic-net-b]
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  metrics:
+    build: ./metrics
+    container_name: metrics
+    networks: [mic-net-b]
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9090/metrics')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  target-http2:
+    build: ./targets/http2_server
+    container_name: target-http2
+    networks: [mic-net-b]
+    ports:
+      - "8080:8080"
+    environment:
+      METRICS_URL: http://metrics:9090
+    depends_on:
+      metrics:
+        condition: service_healthy
+    restart: unless-stopped
+
+  target-quic:
+    build: ./targets/quic_server
+    container_name: target-quic
+    networks: [mic-net-b]
+    ports:
+      - "4433:4433/udp"
+    environment:
+      METRICS_URL: http://metrics:9090
+    depends_on:
+      metrics:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # In the single-machine setup, target-tcpudp has NO exposed port (it's only
+  # reached via the shared mic-net bridge). For multi-machine deployment it
+  # MUST be exposed, since Machine A's gen-tcpudp reaches it over the real
+  # network rather than a shared Docker network.
+  target-tcpudp:
+    build: ./targets/tcpudp_sink
+    container_name: target-tcpudp
+    networks: [mic-net-b]
+    ports:
+      - "9999:9999"
+      - "9999:9999/udp"
+    restart: unless-stopped

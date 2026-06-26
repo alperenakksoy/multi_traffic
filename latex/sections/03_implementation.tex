@@ -1,0 +1,97 @@
+\section{Implementation Decisions and Trade-offs}
+
+\subsection{Connection reuse vs. a fresh connection per packet}
+
+The HTTP/2 generator opens one \texttt{httpx} client with HTTP/2 enabled and
+keeps it open for the whole run, firing several requests at once over that
+single connection to actually use multiplexing rather than just claiming to.
+The QUIC generator does the same thing for the same reason: a QUIC handshake
+costs at least one extra round trip, and if the generator reconnected for
+every request that handshake cost would swamp the latency numbers and make
+QUIC look artificially slow next to HTTP/2 and MQTT, both of which also keep a
+connection open.
+
+The TCP/UDP generator does the opposite on purpose. For every single TCP
+packet it opens a new connection, sends, and closes it again. This was not an
+oversight. A fresh connect/close cycle produces a real SYN, SYN-ACK and FIN
+sequence in the capture, which is exactly what is needed later for the
+Failure Visibility analysis and for telling raw TCP apart from the
+application-level protocols in a protocol hierarchy view.
+
+\subsection{Mode and pattern as two separate knobs}
+
+The TCP/UDP generator splits "what does a packet look like" from "how is it
+paced over time". \texttt{mode} controls size and base interval: normal mode
+uses a fixed 512 bytes every 100 ms, stealth mode draws a random size between
+64 and 1400 bytes with Poisson-distributed timing. \texttt{pattern}
+independently controls the sending cadence on top of that: constant, periodic
+burst, an extra random gap, or a linear ramp. Keeping these two orthogonal
+made it possible to test, for example, stealth-mode sizing combined with a
+burst cadence, which would not have been possible if mode and pattern were
+the same setting. The other three generators (HTTP/2, QUIC, MQTT) do not have
+a separate \texttt{mode} the way TCP/UDP does, but they share the same
+\texttt{pattern} field and the same four options, so periodic bursts and
+ramps are available on every protocol, not just the one that originally
+needed them for behavioral fingerprinting.
+
+\subsection{The Poisson pattern on every protocol, not just one}
+
+The assignment only asks for a random, Poisson-distributed pattern somewhere
+in the system. This implementation puts it on all four generators using
+\texttt{random.expovariate(1/interval)} (or NumPy's exponential distribution
+for the TCP/UDP generator), which produces exponentially distributed gaps
+between sends with the same average rate as the constant pattern. The reason
+to extend it everywhere was to be able to show one single Wireshark capture
+where HTTP/2, QUIC and MQTT all use Poisson timing at once, alongside TCP/UDP
+stealth mode, rather than only ever demonstrating it on one protocol.
+
+\subsection{Warmup/cooldown and the per-protocol ramp pattern are two separate mechanisms}
+
+An early version of this system tried to satisfy the assignment's "ramping
+(linear increase over time)" sending pattern by reusing the warmup/cooldown
+machinery: a controller-side function, \texttt{\_ramp\_rates()}, already
+steps every generator's rate field linearly from zero up to its configured
+target over the warmup window, and back down to zero over the cooldown
+window, sending the new value through the normal PATCH endpoint at each
+step. The gradual change is visible as a slope in a Wireshark I/O graph, so
+at first glance it looked like one mechanism could cover both requirements.
+
+On closer reading of the assignment, this was not a good fit. Ramping is
+listed alongside constant, periodic burst, and random as one of several
+sending-pattern \emph{options}, meant to be selected per protocol and per
+phase, the same way a phase can put one protocol on \texttt{periodic\_burst}
+while another stays \texttt{constant}. The warmup/cooldown ramp cannot do
+that: it always ramps every generator's rate together, and only once, at the
+very start and end of an entire profile run, never in the middle of it on a
+single protocol.
+
+Each generator was therefore given its own \texttt{ramp} pattern, alongside
+\texttt{constant}, \texttt{periodic\_burst}, and \texttt{random}, configured
+with \texttt{ramp\_start\_rate}, \texttt{ramp\_end\_rate}, and
+\texttt{ramp\_duration}. The generator tracks a wall-clock timestamp for when
+it last switched into ramp mode and computes its current effective rate by
+linearly interpolating between the two rate values over the configured
+duration, independently of the controller and of any other protocol running
+at the same time. A phase can now, for example, set MQTT to ramp from 5 to
+180 messages/sec over 40 seconds while HTTP/2 in the same phase stays at a
+flat rate -- something the global warmup/cooldown ramp alone could never
+express. The two mechanisms can coexist (warmup/cooldown still ramps the
+generic rate field for every generator at the edges of a run; the per-protocol
+ramp pattern runs inside whichever phase requests it), with one minor
+interaction worth noting: while a generator is in \texttt{ramp} mode, it
+reads its rate from \texttt{ramp\_start\_rate}/\texttt{ramp\_end\_rate}
+rather than the generic \texttt{rate} field, so a warmup/cooldown PATCH
+targeting that generic field has no visible effect on it until the phase's
+pattern changes away from \texttt{ramp}. None of the bundled configuration
+profiles trigger this, since their ramp phases all sit between the warmup
+and cooldown windows, not overlapping them.
+
+\subsection{Adaptive Control}
+
+The controller can run an autonomous control loop, either because a YAML
+phase turns it on or because it was switched on manually. Every few seconds it
+checks each generator's error rate, and where reported its latency, against
+configurable thresholds, and scales the rate up or down by a multiplier
+bounded on both ends. This goes past the baseline requirements, but it ties
+directly into the resilience patterns covered in the course: the system reacts
+to an injected failure on its own, without anyone touching a slider.

@@ -1,0 +1,97 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-Machine Deployment — MACHINE A (Controller + Dashboard + Generators)
+# ─────────────────────────────────────────────────────────────────────────────
+# Run this on the FIRST lab machine, AFTER docker-compose.targets.yml is
+# already running on Machine B. All 4 generators and the controller send
+# their traffic/requests across the real network link to Machine B.
+#
+# Usage (on Machine A):
+#   1. Find Machine B's IP (run on Machine B):
+#        ip addr show eth0      # Linux
+#        ipconfig getifaddr en0 # macOS
+#   2. Create a .env file next to this docker-compose file (or export the
+#      variable in your shell) with Machine B's IP:
+#        echo "TARGET_B_IP=192.168.1.42" > .env
+#   3. Start:
+#        docker-compose -f docker-compose.generators.yml up --build
+#
+# Capture the traffic with Wireshark on the PHYSICAL network interface of
+# either machine (not docker0/br-*) — this is what makes the capture
+# genuinely "inter-machine" instead of looped back over the Docker bridge.
+#
+# Everything else (YAML profiles, dashboard at :3000, controller API at
+# :8000) behaves identically to the single-machine docker-compose.yml.
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  mic-net-a:
+    driver: bridge
+
+services:
+
+  controller:
+    build: ./controller
+    container_name: controller
+    networks: [mic-net-a]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config:ro
+    environment:
+      METRICS_URL: http://${TARGET_B_IP:?Set TARGET_B_IP to Machine B's IP, e.g. in a .env file}:9090
+      GEN_HTTP2_URL: http://gen-http2:7001
+      GEN_QUIC_URL: http://gen-quic:7002
+      GEN_MQTT_URL: http://gen-mqtt:7003
+      GEN_TCPUDP_URL: http://gen-tcpudp:7004
+    restart: unless-stopped
+
+  gen-http2:
+    build: ./generators/http2
+    container_name: gen-http2
+    networks: [mic-net-a]
+    environment:
+      TARGET_URL: http://${TARGET_B_IP}:8080
+      METRICS_URL: http://${TARGET_B_IP}:9090
+      PORT: 7001
+    restart: unless-stopped
+
+  gen-quic:
+    build: ./generators/quic
+    container_name: gen-quic
+    networks: [mic-net-a]
+    environment:
+      TARGET_HOST: ${TARGET_B_IP}
+      TARGET_PORT: 4433
+      METRICS_URL: http://${TARGET_B_IP}:9090
+      PORT: 7002
+    restart: unless-stopped
+
+  gen-mqtt:
+    build: ./generators/mqtt
+    container_name: gen-mqtt
+    networks: [mic-net-a]
+    environment:
+      BROKER_HOST: ${TARGET_B_IP}
+      BROKER_PORT: 1883
+      METRICS_URL: http://${TARGET_B_IP}:9090
+      PORT: 7003
+    restart: unless-stopped
+
+  gen-tcpudp:
+    build: ./generators/tcpudp
+    container_name: gen-tcpudp
+    networks: [mic-net-a]
+    environment:
+      TARGET_HOST: ${TARGET_B_IP}
+      TARGET_PORT: 9999
+      METRICS_URL: http://${TARGET_B_IP}:9090
+      PORT: 7004
+    restart: unless-stopped
+
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    networks: [mic-net-a]
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

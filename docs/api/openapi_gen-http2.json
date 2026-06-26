@@ -1,0 +1,488 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MIC HTTP/2 Generator",
+    "description": "Generates configurable, multiplexed HTTP/2 GET/POST traffic against the HTTP/2 target server.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/start": {
+      "post": {
+        "summary": "Start generating traffic",
+        "description": "Starts the generator and optionally applies an initial configuration (same fields as PATCH /config).",
+        "operationId": "start_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorConfig",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stop": {
+      "post": {
+        "summary": "Stop generating traffic",
+        "operationId": "stop_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "patch": {
+        "summary": "Update configuration at runtime",
+        "description": "Updates any subset of: rate, payload_size, method_get_pct, concurrent_streams, get_paths, post_paths, pattern ('constant'|'periodic_burst'|'random'), burst_rate, burst_duration, burst_interval, fault_rate, extra_latency_ms.",
+        "operationId": "config_config_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Get live status and statistics",
+        "operationId": "status_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GeneratorConfig": {
+        "properties": {
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate",
+            "description": "Target send rate in requests per second (across all concurrent streams)."
+          },
+          "payload_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Size",
+            "description": "Size (bytes) of the random payload sent as the body of each POST request."
+          },
+          "method_get_pct": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method Get Pct",
+            "description": "Percentage (0-100) of requests sent as GET; the remainder are sent as POST. Controls the request method distribution."
+          },
+          "concurrent_streams": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concurrent Streams",
+            "description": "Number of requests fired concurrently each cycle, all multiplexed over the single shared HTTP/2 connection to the target."
+          },
+          "get_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Get Paths",
+            "description": "List of target paths used for GET requests; one is chosen at random for each GET request. Allows the generator to spread traffic across multiple endpoints instead of always hitting the same path."
+          },
+          "post_paths": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Paths",
+            "description": "List of target paths used for POST requests; one is chosen at random for each POST request."
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern",
+            "description": "Overall sending cadence: 'constant' (steady `rate`), 'periodic_burst' (alternates between `rate` and `burst_rate` for `burst_duration` seconds every `burst_interval` seconds), or 'random' (exponentially-distributed/Poisson gaps between sends, same mean rate as 'constant')."
+          },
+          "burst_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Burst Rate",
+            "description": "Request rate (requests/sec) used during a burst window when pattern='periodic_burst'."
+          },
+          "burst_duration": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Burst Duration",
+            "description": "Length (seconds) of each burst window."
+          },
+          "burst_interval": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Burst Interval",
+            "description": "Period (seconds) between the start of consecutive burst windows."
+          },
+          "fault_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fault Rate",
+            "description": "Fraction of requests (0-1) deliberately treated as failures, without sending, for resilience and failure-injection demos."
+          },
+          "extra_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Latency Ms",
+            "description": "Artificial extra delay (ms) injected before every request, simulating network congestion or an overloaded target."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "GeneratorConfig",
+        "description": "Configurable parameters. All fields optional; only provided keys are updated.",
+        "example": {
+          "concurrent_streams": 5,
+          "extra_latency_ms": 0,
+          "fault_rate": 0.0,
+          "get_paths": [
+            "/",
+            "/api/items"
+          ],
+          "method_get_pct": 70,
+          "payload_size": 4096,
+          "post_paths": [
+            "/data",
+            "/api/upload"
+          ],
+          "rate": 100
+        }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OkResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "OkResponse"
+      },
+      "StatusResponse": {
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "rate": {
+            "type": "number",
+            "title": "Rate"
+          },
+          "payload_size": {
+            "type": "integer",
+            "title": "Payload Size"
+          },
+          "method_get_pct": {
+            "type": "integer",
+            "title": "Method Get Pct"
+          },
+          "concurrent_streams": {
+            "type": "integer",
+            "title": "Concurrent Streams"
+          },
+          "get_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Get Paths"
+          },
+          "post_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Post Paths"
+          },
+          "pattern": {
+            "type": "string",
+            "title": "Pattern"
+          },
+          "burst_rate": {
+            "type": "number",
+            "title": "Burst Rate"
+          },
+          "burst_duration": {
+            "type": "number",
+            "title": "Burst Duration"
+          },
+          "burst_interval": {
+            "type": "number",
+            "title": "Burst Interval"
+          },
+          "burst_active": {
+            "type": "boolean",
+            "title": "Burst Active",
+            "description": "True if a burst window is currently active (pattern='periodic_burst' only).",
+            "default": false
+          },
+          "packets_sent": {
+            "type": "integer",
+            "title": "Packets Sent"
+          },
+          "bytes_sent": {
+            "type": "integer",
+            "title": "Bytes Sent"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          },
+          "rate_bps": {
+            "type": "integer",
+            "title": "Rate Bps"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms"
+          },
+          "fault_rate": {
+            "type": "number",
+            "title": "Fault Rate"
+          },
+          "extra_latency_ms": {
+            "type": "number",
+            "title": "Extra Latency Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "running",
+          "rate",
+          "payload_size",
+          "method_get_pct",
+          "concurrent_streams",
+          "get_paths",
+          "post_paths",
+          "pattern",
+          "burst_rate",
+          "burst_duration",
+          "burst_interval",
+          "packets_sent",
+          "bytes_sent",
+          "errors",
+          "rate_bps",
+          "latency_ms",
+          "fault_rate",
+          "extra_latency_ms"
+        ],
+        "title": "StatusResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

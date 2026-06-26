@@ -1,0 +1,59 @@
+\section{Traffic Analysis Results}
+
+This section presents the five required Wireshark captures. Each subsection
+below has the exact setup already filled in, since that part does not depend
+on the actual capture, only on what to insert once the capture exists.
+
+\subsection{Protocol Distribution}
+
+Capture at least 60 seconds with the \texttt{balanced} profile running all
+four generators. Export Statistics $\rightarrow$ Protocol Hierarchy as a
+screenshot.
+
+\todoblock{INSERT}{Screenshot of the Protocol Hierarchy and the percentage
+breakdown of TCP vs.\ UDP, and within TCP the HTTP/2 (port 8080), MQTT (port
+1883) and raw TCP shares, plus the UDP-only QUIC share (port 4433).}
+
+\subsection{Temporal Analysis}
+
+Capture 120 seconds with the \texttt{http2\_heavy} profile, which includes a
+periodic-burst phase (burst rate 400 for 5 seconds every 30 seconds). Export
+Statistics $\rightarrow$ I/O Graph with one line per protocol filter.
+
+\todoblock{INSERT}{I/O graph screenshot with the burst peaks marked, plus a
+second capture of a warmup period and a Random/Poisson phase for comparison
+against the constant and burst shapes.}
+
+\subsection{Behavioral Fingerprinting}
+
+Capture two 30-second windows of the TCP/UDP generator alone: one in
+\texttt{mode=normal}, one in \texttt{mode=stealth}. Optionally extend this with
+the \texttt{balanced\_with\_stealth} phase, which runs stealth mode together
+with the random pattern on HTTP/2, QUIC and MQTT at the same time.
+
+\todoblock{INSERT}{Packet-length histograms and inter-arrival-time
+distributions for both modes, with an explicit statement of which
+characteristics are distinguishable (e.g.\ the fixed 100\,ms spacing in normal
+mode) and which overlap with real client traffic.}
+
+\subsection{Failure Visibility}
+
+Capture across a \texttt{docker stop target-http2} event during normal
+operation. Filter on \texttt{tcp.flags.reset==1} for the TCP RST, or look for
+repeated SYNs to port 1883 if stopping \texttt{mosquitto} instead.
+
+\todoblock{INSERT}{Measured time from the stop command to the first visible
+failure indicator, and which protocol-specific signal appeared. See Section VI
+for the deeper discussion of this capture together with the Adaptive Control
+reaction.}
+
+\subsection{Multi-System Deployment}
+
+Capture on the physical network interface of either lab machine (not
+\texttt{docker0}/\texttt{br-*}) while \texttt{docker-compose.targets.yml} runs
+on Machine B and \texttt{docker-compose.generators.yml} runs on Machine A with
+\texttt{TARGET\_B\_IP} pointing at Machine B.
+
+\todoblock{INSERT}{Capture screenshot plus measured latency per protocol,
+compared against an equivalent single-machine run. See Section VII for the
+full comparison.}

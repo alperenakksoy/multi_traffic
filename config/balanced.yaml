@@ -1,0 +1,139 @@
+# Traffic Profile: Balanced
+# All protocols active evenly; main profile for protocol distribution capture
+
+global:
+  duration: 300
+  warmup: 30
+  cooldown: 30
+
+phases:
+  - name: balanced_constant
+    duration: 75
+    description: "Even distribution, constant rate; ideal for protocol hierarchy analysis"
+    protocols:
+      http2:
+        rate: 50
+        payload_size: 2048
+        method_distribution:
+          GET: 70
+          POST: 30
+        concurrent_streams: 3
+      quic:
+        rate: 40
+        payload_size: 1024
+        stream_count: 2
+        use_0rtt: false
+      mqtt:
+        rate: 30
+        payload_size: 256
+        qos_distribution:
+          0: 40
+          1: 40
+          2: 20
+        topics:
+          - sensors/temperature
+          - sensors/humidity
+          - status/heartbeat
+      tcp:
+        rate: 15
+        packet_size: 512
+        mode: normal
+      udp:
+        rate: 10
+        packet_size: 256
+
+  - name: balanced_with_stealth
+    duration: 75
+    description: "Stealth mode active; for behavioral fingerprinting analysis"
+    protocols:
+      http2:
+        rate: 50
+        payload_size: 2048
+        pattern: random        # Poisson inter-arrival, same mean rate
+      quic:
+        rate: 40
+        payload_size: 1024
+        pattern: random        # Poisson inter-arrival, same mean rate
+      mqtt:
+        rate: 30
+        payload_size: 256
+        qos_distribution:
+          0: 50
+          1: 30
+          2: 20
+        pattern: random        # Poisson inter-arrival, same mean rate
+      tcpudp:
+        mode: stealth          # STEALTH MODE ACTIVE
+        mean_interval: 0.100   # Poisson(μ=100ms)
+        min_size: 64
+        max_size: 1400
+        tcp_ratio: 60
+        pattern: random        # Poisson inter-arrival on top of stealth size/timing
+
+  - name: balanced_ramp
+    duration: 75
+    description: >
+      Linear ramp ("ramping (linear increase over time)" sending pattern):
+      every protocol's effective rate climbs linearly from ramp_start_rate to
+      ramp_end_rate over ramp_duration seconds, then holds - directly visible
+      as a rising slope in a Wireshark I/O graph, independent of the global
+      warmup/cooldown ramp.
+    protocols:
+      http2:
+        payload_size: 2048
+        concurrent_streams: 3
+        pattern: ramp
+        ramp_start_rate: 5
+        ramp_end_rate: 120
+        ramp_duration: 60
+      quic:
+        payload_size: 1024
+        pattern: ramp
+        ramp_start_rate: 5
+        ramp_end_rate: 80
+        ramp_duration: 60
+      mqtt:
+        payload_size: 256
+        qos_distribution:
+          0: 40
+          1: 40
+          2: 20
+        pattern: ramp
+        ramp_start_rate: 5
+        ramp_end_rate: 100
+        ramp_duration: 60
+      tcpudp:
+        mode: normal
+        tcp_ratio: 60
+        pattern: ramp
+        ramp_start_rate: 5
+        ramp_end_rate: 60
+        ramp_duration: 60
+
+  - name: balanced_adaptive
+    duration: 75
+    description: "Adaptive Control active; system automatically adjusts rates based on error rate/latency"
+    adaptive_control:
+      enabled: true
+      check_interval: 5       # check every 5 sec; fast, clearly visible reaction in the demo
+      scale_up_threshold:
+        error_rate_max: 0.0   # 0% errors -> increase rate by 20%
+        latency_max_ms: 50
+      scale_down_threshold:
+        error_rate_min: 0.05  # >= 5% errors -> decrease rate by 50%
+        latency_min_ms: 150
+      scale_up_factor: 1.2
+      scale_down_factor: 0.5
+      min_multiplier: 0.1
+      max_multiplier: 5.0
+    protocols:
+      http2:
+        rate: 50
+        payload_size: 2048
+      quic:
+        rate: 40
+      mqtt:
+        rate: 30
+      tcp:
+        rate: 15
+        mode: normal

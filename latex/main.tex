@@ -1,0 +1,78 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{cite}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit}
+
+\definecolor{todocolor}{RGB}{192,0,0}
+% Use \todoblock{label}{instructions} to mark a section that still needs
+% real data from your own Wireshark captures. Search for "todoblock" and
+% delete every occurrence before final submission.
+\newcommand{\todoblock}[2]{%
+  \par\noindent\textbf{\textcolor{todocolor}{[#1]}}~\textit{\textcolor{todocolor}{#2}}\par%
+}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  columns=flexible,
+  frame=single,
+  framerule=0.3pt,
+}
+
+\begin{document}
+
+\title{
+  \includegraphics[height=1.05cm]{figures/hsrw_logo.png}
+  \hfill
+  \includegraphics[height=1.05cm]{figures/crl_logo.png}\\[10pt]
+  Multi-Protocol Traffic Generation and Analysis:\\
+  A Containerized System for HTTP/2, QUIC, MQTT and Raw TCP/UDP
+}
+
+\author{
+  \IEEEauthorblockN{Amine Ahamri}
+  \IEEEauthorblockA{
+    Mobile \& Internet Computing\\
+    Hochschule Rhein-Waal\\
+  }
+}
+
+\maketitle
+
+\begin{abstract}
+This report describes a containerized system for generating and controlling
+network traffic. It covers five protocols at once: HTTP/2, QUIC, MQTT, TCP and
+UDP. 15 Docker containers make up the system. A central controller reads
+YAML traffic profiles and drives four generators through a REST API. The
+system supports four sending patterns: constant, periodic burst, linear ramp,
+and Poisson-distributed random intervals. It also runs an autonomous Adaptive
+Control loop that reacts to error rates and latency, plus a stealth mode for
+the TCP/UDP generator that hides its statistical fingerprint. This report
+covers the architecture, the implementation decisions behind it, the
+configuration format, and the Wireshark-based traffic analysis.
+\end{abstract}
+
+\begin{IEEEkeywords}
+HTTP/2, QUIC, MQTT, Docker, traffic generation, Wireshark, behavioral fingerprinting, adaptive control
+\end{IEEEkeywords}
+
+\input{sections/01_introduction}
+\input{sections/02_architecture}
+\input{sections/03_implementation}
+\input{sections/04_configuration}
+\input{sections/05_traffic_analysis}
+\input{sections/06_failure_analysis}
+\input{sections/07_multimachine}
+\input{sections/08_reflection}
+\input{sections/09_ai_usage}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

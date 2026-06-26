@@ -1,0 +1,220 @@
+version: '3.8'
+
+# Netzwerk
+networks:
+  mic-net:
+    driver: bridge
+
+# Services
+services:
+
+  # MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    networks: [mic-net]
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  # Metrics Collector
+  metrics:
+    build: ./metrics
+    container_name: metrics
+    networks: [mic-net]
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9090/metrics')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Traffic Controller (REST API + YAML-Config)
+  controller:
+    build: ./controller
+    container_name: controller
+    networks: [mic-net]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config:ro
+    environment:
+      METRICS_URL: http://metrics:9090
+      GEN_HTTP2_URL: http://gen-http2:7001
+      GEN_QUIC_URL: http://gen-quic:7002
+      GEN_MQTT_URL: http://gen-mqtt:7003
+      GEN_TCPUDP_URL: http://gen-tcpudp:7004
+    depends_on:
+      metrics:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # HTTP/2 Target Server
+  target-http2:
+    build: ./targets/http2_server
+    container_name: target-http2
+    networks: [mic-net]
+    ports:
+      - "8080:8080"
+    environment:
+      METRICS_URL: http://metrics:9090
+    depends_on:
+      metrics:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # QUIC / HTTP/3 Target Server
+  target-quic:
+    build: ./targets/quic_server
+    container_name: target-quic
+    networks: [mic-net]
+    ports:
+      - "4433:4433/udp"
+    environment:
+      METRICS_URL: http://metrics:9090
+    depends_on:
+      metrics:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # TCP/UDP Packet Sink
+  target-tcpudp:
+    build: ./targets/tcpudp_sink
+    container_name: target-tcpudp
+    networks: [mic-net]
+    restart: unless-stopped
+
+  # HTTP/2 Generator
+  gen-http2:
+    build: ./generators/http2
+    container_name: gen-http2
+    networks: [mic-net]
+    environment:
+      TARGET_URL: http://target-http2:8080
+      METRICS_URL: http://metrics:9090
+      PORT: 7001
+    depends_on:
+      - target-http2
+      - metrics
+    restart: unless-stopped
+
+  # QUIC / HTTP/3 Generator
+  gen-quic:
+    build: ./generators/quic
+    container_name: gen-quic
+    networks: [mic-net]
+    environment:
+      TARGET_HOST: target-quic
+      TARGET_PORT: 4433
+      METRICS_URL: http://metrics:9090
+      PORT: 7002
+    depends_on:
+      - target-quic
+      - metrics
+    restart: unless-stopped
+
+  # MQTT Generator
+  gen-mqtt:
+    build: ./generators/mqtt
+    container_name: gen-mqtt
+    networks: [mic-net]
+    environment:
+      BROKER_HOST: mosquitto
+      BROKER_PORT: 1883
+      METRICS_URL: http://metrics:9090
+      PORT: 7003
+    depends_on:
+      - mosquitto
+      - metrics
+    restart: unless-stopped
+
+  # TCP/UDP Generator
+  gen-tcpudp:
+    build: ./generators/tcpudp
+    container_name: gen-tcpudp
+    networks: [mic-net]
+    environment:
+      TARGET_HOST: target-tcpudp
+      TARGET_PORT: 9999
+      METRICS_URL: http://metrics:9090
+      PORT: 7004
+    depends_on:
+      - target-tcpudp
+      - metrics
+    restart: unless-stopped
+
+  # Web Dashboard
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    networks: [mic-net]
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  # Network Analyzers (live packet-capture sidecars). Each shares one target
+  # container's network namespace (network_mode: "service:<target>") instead of
+  # sniffing the mic-net bridge directly, since Docker Desktop on macOS/Windows
+  # exposes no host-visible bridge interface (see docs/WIRESHARK_GUIDE.md) - this
+  # works identically on macOS and Linux. Each analyzer only sees its own
+  # target's traffic; the Metrics Collector sums all of them into one live
+  # picture (GET /analysis on :9090), exposed through the dashboard.
+  analyzer-http2:
+    build: ./analyzer
+    container_name: analyzer-http2
+    network_mode: "service:target-http2"
+    cap_add: [NET_RAW, NET_ADMIN]
+    environment:
+      ANALYZER_NAME: target-http2
+      IFACE: eth0
+      METRICS_URL: http://metrics:9090
+    depends_on:
+      - target-http2
+      - metrics
+    restart: unless-stopped
+
+  analyzer-quic:
+    build: ./analyzer
+    container_name: analyzer-quic
+    network_mode: "service:target-quic"
+    cap_add: [NET_RAW, NET_ADMIN]
+    environment:
+      ANALYZER_NAME: target-quic
+      IFACE: eth0
+      METRICS_URL: http://metrics:9090
+    depends_on:
+      - target-quic
+      - metrics
+    restart: unless-stopped
+
+  analyzer-mqtt:
+    build: ./analyzer
+    container_name: analyzer-mqtt
+    network_mode: "service:mosquitto"
+    cap_add: [NET_RAW, NET_ADMIN]
+    environment:
+      ANALYZER_NAME: mosquitto
+      IFACE: eth0
+      METRICS_URL: http://metrics:9090
+    depends_on:
+      - mosquitto
+      - metrics
+    restart: unless-stopped
+
+  analyzer-tcpudp:
+    build: ./analyzer
+    container_name: analyzer-tcpudp
+    network_mode: "service:target-tcpudp"
+    cap_add: [NET_RAW, NET_ADMIN]
+    environment:
+      ANALYZER_NAME: target-tcpudp
+      IFACE: eth0
+      METRICS_URL: http://metrics:9090
+    depends_on:
+      - target-tcpudp
+      - metrics
+    restart: unless-stopped

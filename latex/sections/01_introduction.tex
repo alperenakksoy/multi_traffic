@@ -1,0 +1,32 @@
+\section{Introduction}
+
+A normal office network never carries just one protocol. At any moment there is
+web traffic, IoT sensor data, video calls and background sync jobs all sharing
+the same wire. Studying how these protocols behave together, how they fail, and
+how easy they are to tell apart from the outside, needs a testbed that can
+actually produce that mix on demand and let you turn the dials while it runs.
+
+This project builds exactly that testbed, based on the assignment in
+\cite{hsrwassignment}. It generates traffic for five protocols at the same
+time: HTTP/2 \cite{rfc7540}, QUIC/HTTP-3 \cite{rfc9000, rfc9114}, MQTT
+\cite{mqtt5} with all three QoS levels, and raw TCP and UDP. Everything runs
+as 15 Docker containers orchestrated with Docker Compose \cite{dockercompose},
+started with one \texttt{docker-compose up}. A central controller loads a YAML profile
+and tells four traffic generators what to send and how fast; a web dashboard
+lets you change any of that live, without restarting anything.
+
+Beyond the basic rate and payload-size knobs, the system implements four
+sending patterns (constant, periodic burst, linear ramp and Poisson-distributed
+random intervals), a stealth mode that makes the raw TCP/UDP generator
+statistically indistinguishable from normal traffic, and an autonomous Adaptive
+Control loop that scales a generator's rate up or down based on the error rate
+it is currently seeing, with no human in the loop.
+
+The rest of this report is organized as follows. Section II describes the
+architecture. Section III walks through the implementation decisions that
+mattered, and why they were made that way. Section IV documents the
+configuration format. Sections V through VII present the Wireshark-based
+traffic analysis, the failure-visibility results and the single- versus
+multi-machine comparison. Section VIII reflects on what the data actually
+showed about protocol behavior, and Section IX documents how AI tools were
+used while building this.

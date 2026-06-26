@@ -1,0 +1,377 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MIC QUIC/HTTP3 Generator",
+    "description": "Generates configurable HTTP/3 requests over QUIC against the QUIC target server.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/start": {
+      "post": {
+        "summary": "Start generating traffic",
+        "description": "Starts the generator and optionally applies an initial configuration (same fields as PATCH /config).",
+        "operationId": "start_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorConfig",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stop": {
+      "post": {
+        "summary": "Stop generating traffic",
+        "operationId": "stop_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "patch": {
+        "summary": "Update configuration at runtime",
+        "description": "Updates any subset of: rate, payload_size, stream_count, use_0rtt, pattern ('constant'|'random'), fault_rate, extra_latency_ms. Note: use_0rtt only affects the next (re)connect; zero_rtt_used in /status reports whether 0-RTT resumption actually occurred on the current connection.",
+        "operationId": "config_config_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratorConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Get live status and statistics",
+        "operationId": "status_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GeneratorConfig": {
+        "properties": {
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate",
+            "description": "Target send rate in connection cycles per second; each cycle sends one HTTP/3 POST request on every concurrent stream."
+          },
+          "payload_size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Size",
+            "description": "Size (bytes) of the random payload sent as the body of each HTTP/3 POST request, on every stream."
+          },
+          "stream_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stream Count",
+            "description": "Number of HTTP/3 requests fired concurrently each cycle, all multiplexed as independent streams over the single shared QUIC connection to the target."
+          },
+          "use_0rtt": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use 0Rtt",
+            "description": "If true, cache the TLS session ticket from the server and attempt 0-RTT session resumption on the next (re)connect, skipping a full 1-RTT handshake. Whether resumption actually happened is reported as zero_rtt_used in /status."
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern",
+            "description": "Overall sending cadence: 'constant' (fixed 1/rate interval between cycles) or 'random' (exponentially-distributed/Poisson gaps between cycles, same mean rate as 'constant')."
+          },
+          "fault_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fault Rate",
+            "description": "Fraction of requests (0-1) deliberately treated as failures, without sending, for resilience and failure-injection demos."
+          },
+          "extra_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Latency Ms",
+            "description": "Artificial extra delay (ms) injected before every request, simulating network congestion or an overloaded target."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "GeneratorConfig",
+        "description": "Configurable parameters. All fields optional; only provided keys are updated.",
+        "example": {
+          "extra_latency_ms": 0,
+          "fault_rate": 0.0,
+          "payload_size": 1024,
+          "rate": 50,
+          "stream_count": 3,
+          "use_0rtt": false
+        }
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OkResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "OkResponse"
+      },
+      "StatusResponse": {
+        "properties": {
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "rate": {
+            "type": "number",
+            "title": "Rate"
+          },
+          "payload_size": {
+            "type": "integer",
+            "title": "Payload Size"
+          },
+          "stream_count": {
+            "type": "integer",
+            "title": "Stream Count"
+          },
+          "use_0rtt": {
+            "type": "boolean",
+            "title": "Use 0Rtt"
+          },
+          "pattern": {
+            "type": "string",
+            "title": "Pattern"
+          },
+          "zero_rtt_used": {
+            "type": "boolean",
+            "title": "Zero Rtt Used"
+          },
+          "packets_sent": {
+            "type": "integer",
+            "title": "Packets Sent"
+          },
+          "bytes_sent": {
+            "type": "integer",
+            "title": "Bytes Sent"
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors"
+          },
+          "rate_bps": {
+            "type": "integer",
+            "title": "Rate Bps"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms"
+          },
+          "fault_rate": {
+            "type": "number",
+            "title": "Fault Rate"
+          },
+          "extra_latency_ms": {
+            "type": "number",
+            "title": "Extra Latency Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "running",
+          "rate",
+          "payload_size",
+          "stream_count",
+          "use_0rtt",
+          "pattern",
+          "zero_rtt_used",
+          "packets_sent",
+          "bytes_sent",
+          "errors",
+          "rate_bps",
+          "latency_ms",
+          "fault_rate",
+          "extra_latency_ms"
+        ],
+        "title": "StatusResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

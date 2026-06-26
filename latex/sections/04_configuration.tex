@@ -1,0 +1,67 @@
+\section{Configuration Format}
+
+The controller reads multi-phase YAML profiles from the \texttt{config/}
+folder. Every profile has a \texttt{global} block with the total duration,
+warmup and cooldown in seconds, and a list of \texttt{phases}. Each phase has
+a name, a duration, an optional \texttt{adaptive\_control} block, and a
+\texttt{protocols} block with one entry per protocol that should be active
+during that phase. Three profiles ship with the project: \texttt{balanced.yaml}
+(constant baseline, then stealth plus random pattern, then a linear ramp on
+all four protocols, then adaptive control), \texttt{http2\_heavy.yaml}
+(HTTP/2 under load, then an HTTP/2 + QUIC ramp phase, then a burst phase),
+and \texttt{mqtt\_heavy.yaml} (a QoS 0 vs.\ QoS 2 vs.\ mixed comparison,
+then an MQTT burst phase, then an MQTT ramp phase).
+
+\begin{table}[t]
+\centering
+\caption{Per-protocol configuration fields}
+\label{tab:config-fields}
+\footnotesize
+\begin{tabular}{@{}p{0.16\linewidth}p{0.78\linewidth}@{}}
+\toprule
+\textbf{Protocol} & \textbf{Fields} \\
+\midrule
+http2 & rate, payload\_size, method\_get\_pct, concurrent\_streams, get\_paths, post\_paths, pattern, burst\_rate, burst\_duration, burst\_interval, ramp\_start\_rate, ramp\_end\_rate, ramp\_duration, fault\_rate, extra\_latency\_ms \\
+quic & rate, payload\_size, stream\_count, use\_0rtt, pattern, burst\_rate, burst\_duration, burst\_interval, ramp\_start\_rate, ramp\_end\_rate, ramp\_duration, fault\_rate, extra\_latency\_ms \\
+mqtt & rate, payload\_size, qos, topic\_count, qos\_distribution, pattern, burst\_rate, burst\_duration, burst\_interval, ramp\_start\_rate, ramp\_end\_rate, ramp\_duration, fault\_rate, extra\_latency\_ms \\
+tcp/udp & tcp\_rate, udp\_rate, packet\_size, mode, mean\_interval, min\_size, max\_size, tcp\_ratio, pattern, burst\_size, burst\_interval, ramp\_start\_rate, ramp\_end\_rate, ramp\_duration, fault\_rate, extra\_latency\_ms \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\texttt{pattern} is the same four-way choice on every protocol: constant,
+periodic burst, random (Poisson), or ramp. The first three were already
+implemented on at least one generator from the start; periodic burst and
+ramp were extended to all four so that any protocol can demonstrate any
+sending pattern, not only the ones that happened to need it first. Ramp is
+distinct from the global \texttt{warmup}/\texttt{cooldown} period described
+above: warmup/cooldown ramps every generator's rate together, once, at the
+very edges of a run, whereas \texttt{pattern: ramp} ramps one generator's
+rate between \texttt{ramp\_start\_rate} and \texttt{ramp\_end\_rate} for the
+duration of whichever phase sets it, independently of every other protocol
+active in that phase.
+
+Most field names in the YAML match the generator's Pydantic model exactly
+and are forwarded unchanged. Two exceptions exist for readability:
+\texttt{method\_distribution: \{GET: 70, POST: 30\}} on the http2 block, and
+\texttt{topics: [...]} on the mqtt block. Generators only understand
+\texttt{method\_get\_pct} and \texttt{topic\_count} respectively, not a named
+distribution or a list of topic names, so the controller's
+\texttt{\_phase\_to\_gen\_configs()} translates both before forwarding the
+phase config: the GET/POST split is normalized into a single
+\texttt{method\_get\_pct} percentage, and the topic list's length becomes
+\texttt{topic\_count} (the topic \emph{names} themselves are not
+configurable -- the generator only rotates through a fixed built-in set --
+so the YAML list is used purely as a readable way to say how many topics
+should be active). Any other key that does not match the model is still
+silently ignored rather than rejected, since the models accept extra keys
+for forward compatibility but the generators only apply the ones they
+recognize.
+
+Configuration is not locked to the YAML once the system is running.
+\texttt{POST /config/load} switches the active profile and applies phase one
+immediately if the system is already started. \texttt{PATCH /generator/\{name\}}
+forwards any subset of the fields in Table~\ref{tab:config-fields} to one
+generator. The dashboard wraps every one of these fields in a slider, toggle
+or text input that calls the same two endpoints, debounced so that dragging a
+slider does not flood the controller with requests.

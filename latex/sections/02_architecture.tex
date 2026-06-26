@@ -1,0 +1,132 @@
+\section{System Architecture}
+
+The system has 15 containers on one Docker bridge network called
+\texttt{mic-net}. Containers find each other by service name through Docker's
+internal DNS, so \texttt{gen-http2} can simply call
+\texttt{http://target-http2:8080} without anyone configuring an IP address
+anywhere.
+
+Ten of those containers carry the core pipeline described below; the
+remaining five are the Mosquitto broker and four \texttt{tshark}-based
+analyzer sidecars (one per target's network namespace), introduced at the
+end of this section. The ten core containers fall into four groups. The \textbf{controller} (FastAPI,
+port 8000) is the brain: it reads the YAML profile, drives the four generators
+through their REST APIs, and runs the Adaptive Control loop. This loop is a
+real feedback mechanism, not just a timer working through YAML phases. Every
+few seconds the controller checks each generator's current error rate against
+a threshold and, if it is crossed, scales that generator's rate down by a
+bounded multiplier on its own, no human involved. Section III-E gives the full
+description. The four \textbf{generators} (\texttt{gen-http2}, \texttt{gen-quic},
+\texttt{gen-mqtt}, \texttt{gen-tcpudp}) each keep their own state and expose
+the same four endpoints: start, stop, patch the config, get the status. They
+are built on \texttt{httpx} (HTTP/2), \texttt{aioquic} \cite{aioquic} (QUIC),
+\texttt{paho-mqtt} \cite{pahomqtt} (MQTT) and plain Python sockets (raw
+TCP/UDP). The three \textbf{target services} (\texttt{target-http2},
+\texttt{target-quic}, \texttt{target-tcpudp}) receive traffic alongside the
+separately-counted Mosquitto broker \cite{mosquitto}. \texttt{target-http2} runs on Hypercorn
+\cite{hypercorn}, the only ASGI server in the project that supports HTTP/2
+natively. The \textbf{metrics collector} (Flask, port 9090) aggregates
+everything into one \texttt{/metrics} response, and the \textbf{dashboard}
+(a single static HTML file served over port 3000) polls the controller every
+two seconds and renders the live state.
+
+Reporting to the metrics collector is not symmetric across these
+containers, and it is worth being precise about who reports and why. All four
+generators post their own send-side counters (packets sent, error count,
+current rate) to the collector, since the controller's Adaptive Control loop
+reads those numbers. \texttt{target-http2} and \texttt{target-quic} also post
+what they received, because both run custom code that can be instrumented
+freely. Mosquitto cannot do this: it runs the stock
+\texttt{eclipse-mosquitto:2} image with no custom instrumentation hook, so it
+stays a black box. Every MQTT number in this report, throughput, latency,
+QoS-level counts, comes only from \texttt{gen-mqtt} on the sending side, never
+from the broker itself. \texttt{target-tcpudp} stays equally silent, but for
+a different reason: it is meant to disappear cleanly when stopped, and the
+resulting TCP RST is exactly what Section VI needs to see in a Wireshark
+capture. A reporting connection on top of that would just be one more thing
+that breaks when the container goes down, so it was left out on purpose.
+
+Fig.~\ref{fig:architecture} shows how a request actually travels through the
+system. The dashboard never talks to a generator directly; every change goes
+through the controller, which is what makes it possible to log every
+configuration change with a timestamp, as the assignment requires.
+
+\begin{figure*}[t]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners, minimum width=2.6cm, minimum height=0.7cm, align=center, font=\footnotesize},
+  arr/.style={-{Latex[length=2mm]}, thick},
+]
+\node[box] (dash) at (5.2,6.6) {Dashboard\\:3000};
+\node[box] (ctrl) at (5.2,5.2) {Controller\\:8000};
+
+\node[box] (h2)     at (0,3.4) {gen-http2};
+\node[box] (quic)   at (3.4,3.4) {gen-quic};
+\node[box] (mqtt)   at (6.8,3.4) {gen-mqtt};
+\node[box] (tcpudp) at (10.2,3.4) {gen-tcpudp};
+
+\node[box] (th2)    at (0,1.6) {target-http2};
+\node[box] (tquic)  at (3.4,1.6) {target-quic};
+\node[box] (broker) at (6.8,1.6) {mosquitto};
+\node[box] (ttcp)   at (10.2,1.6) {target-tcpudp};
+
+\node[box, minimum width=15cm, minimum height=0.8cm] (metrics) at (5.5,-0.5) {Metrics Collector \;\textbar\; :9090};
+
+\draw[arr] (dash) -- (ctrl) node[midway, right, font=\scriptsize] {GET /status};
+\draw[arr] (ctrl) -- (h2);
+\draw[arr] (ctrl) -- (quic);
+\draw[arr] (ctrl) -- (mqtt);
+\draw[arr] (ctrl) -- (tcpudp);
+\draw[arr] (h2) -- (th2);
+\draw[arr] (quic) -- (tquic);
+\draw[arr] (mqtt) -- (broker);
+\draw[arr] (tcpudp) -- (ttcp);
+
+\draw[arr, dashed] (th2) -- (0,-0.1);
+\draw[arr, dashed] (tquic) -- (3.4,-0.1);
+
+\draw[arr, dashed] (h2.south)     -- (0,2.9)  -- (1.7,2.9) -- (1.7,-0.1);
+\draw[arr, dashed] (quic.south)   -- (3.4,2.9) -- (5.1,2.9) -- (5.1,-0.1);
+\draw[arr, dashed] (mqtt.south)   -- (6.8,2.9) -- (8.5,2.9) -- (8.5,-0.1);
+\draw[arr, dashed] (tcpudp.south) -- (10.2,2.9) -- (12.3,2.9) -- (12.3,-0.1);
+
+\draw[arr, dashed] (ctrl.east) -- (13.8,5.2) -- (13.8,-0.5)
+  node[pos=0.4, right, font=\scriptsize] {GET /metrics} -- (metrics.east);
+\end{tikzpicture}%
+}
+\caption{Component diagram of the single-machine deployment. Solid arrows are
+REST calls or raw protocol traffic. Dashed arrows show metrics reporting: all
+four generators and the two custom-built targets post their counters up to
+the collector; the long line on the right is the controller reading the
+aggregate back out for the dashboard and for Adaptive Control. Mosquitto and
+\texttt{target-tcpudp} have no dashed line on purpose, as explained in the
+text.}
+\label{fig:architecture}
+\end{figure*}
+
+The same decoupling that makes this diagram work on one machine is what makes
+the two-machine deployment in Section VII possible without changing a single
+line of code. Every generator already reaches its target through an
+environment variable (\texttt{TARGET\_URL}, \texttt{TARGET\_HOST}, or
+\texttt{BROKER\_HOST}), never through a hardcoded address. Splitting the
+system across two hosts is therefore just a matter of pointing those
+variables at a real IP instead of a Docker service name, as described in
+Section VII; no overlay network or Swarm setup is needed for two machines on
+the same LAN.
+
+The remaining five containers sit outside the request-handling pipeline shown
+in Fig.~\ref{fig:architecture}: Mosquitto, already introduced above as the
+target \texttt{gen-mqtt} and \texttt{target-tcpudp}'s silent counterpart, and
+four \texttt{tshark}-based \textbf{analyzer} sidecars
+(\texttt{analyzer-http2}, \texttt{analyzer-quic}, \texttt{analyzer-mqtt},
+\texttt{analyzer-tcpudp}), one per target's network namespace
+(\texttt{network\_mode: "service:target-X"}, so each sidecar sees exactly the
+traffic its target sees, nothing more). Each runs a live capture filtered to
+its own protocol's port, classifies packets purely by port number, and POSTs
+a running total plus a one-second-bucketed history to the Metrics Collector
+every second through the same \texttt{/analysis/update} endpoint the
+generators already use for self-reported counters. This gives every number in
+Section V two independent sources to cross-check against each other: what the
+generators say they sent, and what \texttt{tshark} actually observed on the
+wire.

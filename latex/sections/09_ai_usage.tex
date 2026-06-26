@@ -1,0 +1,33 @@
+\section{AI Usage Documentation}
+
+I used Anthropic's Claude throughout this project, working directly in the
+repository through an agentic coding session with file and shell access.
+
+For the code, I used it to scaffold the first version of the
+\texttt{docker-compose.yml} layout, the controller's FastAPI skeleton and the
+four generators' REST contract (start, stop, patch config, get status), and
+then iterated on that by hand and through more prompts. The Adaptive Control
+loop, the warmup/cooldown ramp, the random pattern on all four generators and
+the per-protocol fault injection were built the same way, one function at a
+time, with a Python syntax check after every change. The OpenAPI/Swagger
+documentation was generated from the Pydantic models and FastAPI decorators
+and kept in sync with a small regeneration script run after every API change.
+
+For the documentation, I had it review the README and the docs against the
+actual code and fix what no longer matched, for example an old claim that the
+TCP/UDP generator used Scapy when the real implementation just uses plain
+sockets.
+
+This report itself was drafted the same way: the architecture, implementation
+and configuration sections came from the verified source code, while the
+traffic analysis, failure analysis and multi-machine sections were left as
+placeholders on purpose, since those need real Wireshark captures that only I
+can produce on lab hardware.
+
+I reviewed every change before accepting it and ran the syntax checks myself.
+I also went through the entire codebase module by module in a separate
+walkthrough session to make sure I could explain every part of it on my own,
+not just recognize that it works.
+
+\todoblock{INSERT}{Replace this paragraph with your own honest account before
+submission, including anything I missed above.}
