@@ -662,6 +662,9 @@ async def start_generator(name: str):
     if name not in GENERATORS:
         raise HTTPException(404, f"Unknown generator '{name}'. Valid: {list(GENERATORS)}")
     result = await _call("post", f"{GENERATORS[name]}/start", json={})
+    if "error" in result:                                                 # ← add
+        _log(f"Failed to start {name}: {result['error']}", "error")      # ← add
+        raise HTTPException(502, detail=f"Generator {name} unreachable: {result['error']}")  # ← add
     _log(f"Started {name}")
     return {"ok": True, "note": str(result)}
 
