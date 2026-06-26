@@ -421,17 +421,16 @@ def _metrics_loop():
     while True:
         time.sleep(5)
 
-        # calculate bytes/sec over last 10 seconds
-        now    = time.time()
-        recent = [b for ts, b in _bytes_window if now - ts <= 10]
-        _bytes_window[:] = [(ts, b) for ts, b in _bytes_window if now - ts <= 10]
-        rate_bps = sum(recent) / 10 if recent else 0
-
-        recent_lat = [l for ts, l in _latency_window if now - ts <= 10]
-        _latency_window[:] = [(ts, l) for ts, l in _latency_window if now - ts <= 10]
-        avg_latency = sum(recent_lat) / len(recent_lat) if recent_lat else 0
-
+        now = time.time()
         with _lock:
+            # list operations inside lock — prevents RuntimeError from concurrent .append()
+            recent = [b for ts, b in _bytes_window if now - ts <= 10]
+            _bytes_window[:] = [(ts, b) for ts, b in _bytes_window if now - ts <= 10]
+            rate_bps = sum(recent) / 10 if recent else 0
+
+            recent_lat = [l for ts, l in _latency_window if now - ts <= 10]
+            _latency_window[:] = [(ts, l) for ts, l in _latency_window if now - ts <= 10]
+            avg_latency = sum(recent_lat) / len(recent_lat) if recent_lat else 0
             state["rate_bps"]   = int(rate_bps)
             state["latency_ms"] = round(avg_latency, 2)
             _history.append({

@@ -28,7 +28,7 @@ things, as the latency signal for Adaptive Control).
 import os, time, asyncio, random, threading
 from typing import Optional
 
-import requests as req_sync
+
 import httpx
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -393,7 +393,8 @@ async def _metrics():
             }
 
         try:
-            req_sync.post(f"{METRICS_URL}/update", json=payload, timeout=2)
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(f"{METRICS_URL}/update", json=payload)
         except Exception:
             pass
 

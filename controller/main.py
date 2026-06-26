@@ -608,12 +608,23 @@ async def load_config(body: ConfigLoadRequest = Body(...)):
     _log(f"Loaded profile '{profile}'")
 
     if state["running"]:
+        # Cancel the existing phase runner so it doesn't overwrite
+        # the new profile's config when its sleep timer expires.
+        if state["phase_task"]:
+            state["phase_task"].cancel()
+            state["phase_task"] = None
+        _stop_adaptive()
+
         phases = profile_data.get("phases", [])
         if phases:
             configs = _phase_to_gen_configs(phases[0])
             for name, cfg in configs.items():
                 if cfg:
                     await _call("patch", f"{GENERATORS[name]}/config", json=cfg)
+
+        # Restart the phase runner with the new profile
+        loop = asyncio.get_event_loop()
+        state["phase_task"] = loop.create_task(_run_phases(profile_data))
 
     return {"ok": True, "profile": profile}
 

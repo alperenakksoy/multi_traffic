@@ -12,7 +12,7 @@ import asyncio, os, time, threading
 import requests as req_sync
 from aioquic.asyncio.server import serve
 from aioquic.h3.connection import H3_ALPN
-from aioquic.h3.events import H3Event, HeadersReceived, DataReceived
+from aioquic.h3.events import HeadersReceived, DataReceived
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.asyncio.protocol import QuicConnectionProtocol
 from aioquic.h3.connection import H3Connection

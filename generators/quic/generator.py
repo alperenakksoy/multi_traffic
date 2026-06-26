@@ -25,7 +25,7 @@ this generator at runtime and read its live statistics.
 import os, sys, time, asyncio, threading, ssl, random
 from typing import Optional
 
-import requests as req_sync
+import httpx
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
@@ -469,7 +469,8 @@ async def _metrics():
             }
 
         try:
-            req_sync.post(f"{METRICS_URL}/update", json=payload, timeout=2)
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(f"{METRICS_URL}/update", json=payload)
         except Exception:
             pass
 
